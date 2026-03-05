@@ -1,0 +1,17 @@
+# Secrets — NEVER commit these
+.master.key
+.env
+
+# Dependencies
+node_modules/
+
+# Python (if any scripts remain)
+venv/
+__pycache__/
+*.pyc
+
+# Claude
+.claude/
+
+# OS
+.DS_Store
