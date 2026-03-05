@@ -2,7 +2,7 @@ const express  = require('express');
 const multer   = require('multer');
 const axios    = require('axios');
 const FormData = require('form-data');
-const pool     = require('../../db');
+const pool = require('../config/db');
 
 const router = express.Router();
 
