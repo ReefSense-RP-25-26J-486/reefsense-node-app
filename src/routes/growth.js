@@ -137,7 +137,7 @@ router.get('/records/:coralId', async (req, res) => {
   const { coralId } = req.params;
   try {
     const { rows } = await pool.query(
-      `SELECT id, coral_id, species, area_cm2, confidence, recorded_at
+      `SELECT id, coral_id, species, area_cm2, confidence, cnn_feed_image, recorded_at
        FROM coral_records
        WHERE coral_id = $1
        ORDER BY recorded_at ASC`,
@@ -154,6 +154,40 @@ router.get('/records/:coralId', async (req, res) => {
     return res.json({ coral_id: coralId, records: recordsWithGrowth });
   } catch (err) {
     console.error('GET /api/growth/records/:coralId:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/growth/records/entry/:recordId  — delete a single record
+router.delete('/records/entry/:recordId', async (req, res) => {
+  const recordId = parseInt(req.params.recordId, 10);
+  if (isNaN(recordId)) {
+    return res.status(400).json({ error: 'Invalid record ID' });
+  }
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM coral_records WHERE id = $1',
+      [recordId]
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Record not found' });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE /api/growth/records/entry/:recordId:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE /api/growth/records/:coralId  — delete all records for a coral
+router.delete('/records/:coralId', async (req, res) => {
+  const { coralId } = req.params;
+  try {
+    const { rowCount } = await pool.query(
+      'DELETE FROM coral_records WHERE coral_id = $1',
+      [coralId]
+    );
+    return res.json({ success: true, deleted: rowCount });
+  } catch (err) {
+    console.error('DELETE /api/growth/records/:coralId:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
