@@ -35,7 +35,7 @@ router.post(
   validateAnalyzeInput,
   async (req, res, next) => {
     try {
-      const { location, date, nursery } = req.body;
+      const { coral_id, location, date, nursery } = req.body;
       const { buffer, mimetype, originalname } = req.file;
 
       // Upload original to Cloudinary + run HF inference in parallel
@@ -51,6 +51,7 @@ router.post(
 
       // Persist to PostgreSQL
       await saveAnalysis({
+        coral_id,
         location,
         date,
         nursery,
