@@ -154,7 +154,7 @@ router.get('/nurseries', async (req, res) => {
         id, type, area_m2,
         width_m, length_m, radius_m, height_m,
         name, coral_species,
-        TO_CHAR(date_placement, 'YYYY-MM-DD') AS date_placement,
+        date_placement,
         depth_m, notes,
         ST_X(ST_Centroid(ST_Transform(geom, 4326))) AS longitude,
         ST_Y(ST_Centroid(ST_Transform(geom, 4326))) AS latitude,
@@ -257,7 +257,7 @@ router.post('/nurseries', async (req, res) => {
         RETURNING
           id, type, area_m2, width_m, length_m, height_m,
           name, coral_species,
-          TO_CHAR(date_placement, 'YYYY-MM-DD') AS date_placement,
+          date_placement,
           depth_m, notes, created_at,
           ST_X(ST_Centroid(ST_Transform(geom, 4326))) AS longitude,
           ST_Y(ST_Centroid(ST_Transform(geom, 4326))) AS latitude
@@ -278,7 +278,7 @@ router.post('/nurseries', async (req, res) => {
         RETURNING
           id, type, area_m2, radius_m, height_m,
           name, coral_species,
-          TO_CHAR(date_placement, 'YYYY-MM-DD') AS date_placement,
+          date_placement,
           depth_m, notes, created_at,
           ST_X(ST_Centroid(ST_Transform(geom, 4326))) AS longitude,
           ST_Y(ST_Centroid(ST_Transform(geom, 4326))) AS latitude
