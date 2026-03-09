@@ -20,6 +20,13 @@ async function runMigrations() {
     await run(`ALTER TABLE nurseries ADD COLUMN IF NOT EXISTS radius_m FLOAT`, 'nurseries.radius_m');
     await run(`ALTER TABLE nurseries ADD COLUMN IF NOT EXISTS height_m FLOAT`, 'nurseries.height_m');
 
+    // GIS: nursery metadata columns
+    await run(`ALTER TABLE nurseries ADD COLUMN IF NOT EXISTS name           TEXT`,  'nurseries.name');
+    await run(`ALTER TABLE nurseries ADD COLUMN IF NOT EXISTS coral_species  TEXT`,  'nurseries.coral_species');
+    await run(`ALTER TABLE nurseries ADD COLUMN IF NOT EXISTS date_placement DATE`,  'nurseries.date_placement');
+    await run(`ALTER TABLE nurseries ADD COLUMN IF NOT EXISTS depth_m        FLOAT`, 'nurseries.depth_m');
+    await run(`ALTER TABLE nurseries ADD COLUMN IF NOT EXISTS notes          TEXT`,  'nurseries.notes');
+
     //  GIS: candidate point availability
     await run(
       `ALTER TABLE candidate_points ADD COLUMN IF NOT EXISTS is_available BOOLEAN DEFAULT true`,
@@ -29,6 +36,36 @@ async function runMigrations() {
       `UPDATE candidate_points SET is_available = true WHERE is_available IS NULL`,
       'candidate_points backfill'
     );
+
+    // GIS: restoration zone polygon table
+    await run(`
+      CREATE TABLE IF NOT EXISTS restoration_zone (
+        id         SERIAL PRIMARY KEY,
+        label      TEXT,
+        geom       geometry(Polygon, 4326),
+        area_m2    FLOAT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`, 'restoration_zone table');
+
+    // Seed the default approximate polygon if the table is empty
+    await run(`
+      INSERT INTO restoration_zone (label, geom, area_m2)
+      SELECT
+        'Port City Coral Restoration Zone',
+        ST_GeomFromText(
+          'POLYGON((79.818 6.944, 79.854 6.944, 79.861 6.926, 79.857 6.906, 79.82 6.903, 79.809 6.917, 79.818 6.944))',
+          4326
+        ),
+        ROUND(
+          ST_Area(ST_Transform(
+            ST_GeomFromText(
+              'POLYGON((79.818 6.944, 79.854 6.944, 79.861 6.926, 79.857 6.906, 79.82 6.903, 79.809 6.917, 79.818 6.944))',
+              4326
+            ), 32644
+          ))::numeric, 2
+        )
+      WHERE NOT EXISTS (SELECT 1 FROM restoration_zone LIMIT 1)
+    `, 'restoration_zone default polygon');
 
     //  Coral data (manual temperature records) 
     await run(`
