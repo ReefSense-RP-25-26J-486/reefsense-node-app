@@ -62,7 +62,7 @@ router.post('/analyze', upload.single('file'), async (req, res) => {
 });
 
 
-
+// POST /records — save a growth record tagged with the selected location
 router.post('/records', async (req, res) => {
   const { coral_id, species, area_cm2, confidence, cnn_feed_image } = req.body;
 
@@ -75,16 +75,16 @@ router.post('/records', async (req, res) => {
   try {
     const { rows: prior } = await pool.query(
       `SELECT area_cm2 FROM coral_records
-       WHERE coral_id = $1
+       WHERE coral_id = $1 AND location_id = $2
        ORDER BY recorded_at DESC, id DESC LIMIT 1`,
-      [coral_id]
+      [coral_id, req.locationId]
     );
 
     const { rows } = await pool.query(
-      `INSERT INTO coral_records (coral_id, species, area_cm2, confidence, cnn_feed_image)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO coral_records (coral_id, species, area_cm2, confidence, cnn_feed_image, location_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
-      [coral_id, species, area_cm2, confidence ?? 0, cnn_feed_image ?? '']
+      [coral_id, species, area_cm2, confidence ?? 0, cnn_feed_image ?? '', req.locationId]
     );
 
     const lastRecord  = prior[0] || null;
@@ -105,7 +105,7 @@ router.post('/records', async (req, res) => {
 });
 
 
-
+// GET /records — list all corals (latest record per coral_id) for this location
 router.get('/records', async (req, res) => {
   try {
     const { rows } = await pool.query(`
@@ -114,16 +114,17 @@ router.get('/records', async (req, res) => {
         cr.species,
         cr.area_cm2  AS latest_area,
         cr.recorded_at AS last_recorded,
-        (SELECT COUNT(*) FROM coral_records WHERE coral_id = cr.coral_id)::int AS record_count
+        (SELECT COUNT(*) FROM coral_records WHERE coral_id = cr.coral_id AND location_id = $1)::int AS record_count
       FROM coral_records cr
-      WHERE cr.id = (
-        SELECT id FROM coral_records
-        WHERE coral_id = cr.coral_id
-        ORDER BY recorded_at DESC, id DESC
-        LIMIT 1
-      )
+      WHERE cr.location_id = $1
+        AND cr.id = (
+          SELECT id FROM coral_records
+          WHERE coral_id = cr.coral_id AND location_id = $1
+          ORDER BY recorded_at DESC, id DESC
+          LIMIT 1
+        )
       ORDER BY last_recorded DESC
-    `);
+    `, [req.locationId]);
     return res.json({ corals: rows });
   } catch (err) {
     console.error('GET /api/growth/records:', err.message);
@@ -132,16 +133,16 @@ router.get('/records', async (req, res) => {
 });
 
 
-
+// GET /records/:coralId — full history for a specific coral in this location
 router.get('/records/:coralId', async (req, res) => {
   const { coralId } = req.params;
   try {
     const { rows } = await pool.query(
       `SELECT id, coral_id, species, area_cm2, confidence, cnn_feed_image, recorded_at
        FROM coral_records
-       WHERE coral_id = $1
+       WHERE coral_id = $1 AND location_id = $2
        ORDER BY recorded_at ASC`,
-      [coralId]
+      [coralId, req.locationId]
     );
 
     const recordsWithGrowth = rows.map((record, i) => ({
@@ -158,7 +159,7 @@ router.get('/records/:coralId', async (req, res) => {
   }
 });
 
-// DELETE /api/growth/records/entry/:recordId  — delete a single record
+// DELETE /records/entry/:recordId — delete a single record (scoped to location)
 router.delete('/records/entry/:recordId', async (req, res) => {
   const recordId = parseInt(req.params.recordId, 10);
   if (isNaN(recordId)) {
@@ -166,8 +167,8 @@ router.delete('/records/entry/:recordId', async (req, res) => {
   }
   try {
     const { rowCount } = await pool.query(
-      'DELETE FROM coral_records WHERE id = $1',
-      [recordId]
+      'DELETE FROM coral_records WHERE id = $1 AND location_id = $2',
+      [recordId, req.locationId]
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Record not found' });
     return res.json({ success: true });
@@ -177,13 +178,13 @@ router.delete('/records/entry/:recordId', async (req, res) => {
   }
 });
 
-// DELETE /api/growth/records/:coralId  — delete all records for a coral
+// DELETE /records/:coralId — delete all records for a coral in this location
 router.delete('/records/:coralId', async (req, res) => {
   const { coralId } = req.params;
   try {
     const { rowCount } = await pool.query(
-      'DELETE FROM coral_records WHERE coral_id = $1',
-      [coralId]
+      'DELETE FROM coral_records WHERE coral_id = $1 AND location_id = $2',
+      [coralId, req.locationId]
     );
     return res.json({ success: true, deleted: rowCount });
   } catch (err) {
