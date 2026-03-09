@@ -57,12 +57,23 @@ router.get('/nursery-types', (req, res) => {
   res.json({ nursery_types: NURSERY_TYPE_INFO });
 });
 
-//  GET /candidate-points 
+//  GET /candidate-points
+// Supports ?available=true|false (default: true) and ?limit=N
 
 router.get('/candidate-points', async (req, res) => {
   try {
+    // available param — default true if omitted
+    const whereClause = req.query.available === 'false'
+      ? 'WHERE is_available = false'
+      : 'WHERE is_available = true';
+
+    // limit param — clamp to 1–500, no limit if omitted
+    const limitClause = req.query.limit
+      ? ` LIMIT ${Math.max(1, Math.min(500, parseInt(req.query.limit) || 120))}`
+      : '';
+
     const { rows } = await pool.query(
-      POINT_SELECT + `WHERE is_available = true ORDER BY suitability_score DESC`
+      POINT_SELECT + `${whereClause} ORDER BY suitability_score DESC${limitClause}`
     );
     res.json({ count: rows.length, points: rows });
   } catch (err) {
@@ -134,7 +145,7 @@ router.post('/top-locations-by-nursery', async (req, res) => {
   }
 });
 
-//  GET /nurseries 
+//  GET /nurseries
 
 router.get('/nurseries', async (req, res) => {
   try {
@@ -142,21 +153,31 @@ router.get('/nurseries', async (req, res) => {
       SELECT
         id, type, area_m2,
         width_m, length_m, radius_m, height_m,
-        ST_AsGeoJSON(ST_Transform(geom, 4326)) AS geojson,
+        name, coral_species,
+        date_placement,
+        depth_m, notes,
+        ST_X(ST_Centroid(ST_Transform(geom, 4326))) AS longitude,
+        ST_Y(ST_Centroid(ST_Transform(geom, 4326))) AS latitude,
         created_at
       FROM nurseries
       ORDER BY created_at DESC
     `);
     const nurseries = rows.map(r => ({
-      id:         r.id,
-      type:       r.type,
-      area_m2:    r.area_m2,
-      width_m:    r.width_m,
-      length_m:   r.length_m,
-      radius_m:   r.radius_m,
-      height_m:   r.height_m,
-      geometry:   r.geojson ? JSON.parse(r.geojson) : null,
-      created_at: r.created_at,
+      id:             r.id,
+      type:           r.type,
+      area_m2:        r.area_m2,
+      width_m:        r.width_m,
+      length_m:       r.length_m,
+      radius_m:       r.radius_m,
+      height_m:       r.height_m,
+      name:           r.name           ?? null,
+      coral_species:  r.coral_species  ?? null,
+      date_placement: r.date_placement ?? null,
+      depth_m:        r.depth_m        ?? null,
+      notes:          r.notes          ?? null,
+      latitude:       r.latitude  != null ? parseFloat(r.latitude)  : null,
+      longitude:      r.longitude != null ? parseFloat(r.longitude) : null,
+      created_at:     r.created_at,
     }));
     res.json({ count: nurseries.length, nurseries });
   } catch (err) {
@@ -165,11 +186,15 @@ router.get('/nurseries', async (req, res) => {
   }
 });
 
-//  POST /nurseries 
+//  POST /nurseries
 // Adds a nursery, then asks the scoring service to recalculate all point scores
 
 router.post('/nurseries', async (req, res) => {
-  const { type, longitude, latitude, width_m, length_m, radius_m, height_m } = req.body;
+  const {
+    type, longitude, latitude,
+    width_m, length_m, radius_m, height_m,
+    name, coral_species, date_placement, depth_m, notes,
+  } = req.body;
 
   if (!type || longitude == null || latitude == null) {
     return res.status(422).json({ error: 'Required fields: type, longitude, latitude' });
@@ -203,34 +228,61 @@ router.post('/nurseries', async (req, res) => {
     // Insert nursery geometry into PostGIS
     let insertSQL, insertParams;
 
+    // Common new-field params shared by both INSERT branches
+    const metaParams = [
+      name          || null,
+      coral_species || null,
+      date_placement|| null,
+      depth_m       != null ? parseFloat(depth_m) : null,
+      notes         || null,
+    ];
+
     if (type === 'table') {
       const hw = width_m  / 2;
       const hl = length_m / 2;
-      insertParams = [longitude, latitude, type, areaMq, hw, hl, width_m, length_m, height_m];
+      // $1=lon  $2=lat  $3=type  $4=area  $5=hw  $6=hl  $7=width_m  $8=length_m  $9=height_m
+      // $10=name  $11=coral_species  $12=date_placement  $13=depth_m  $14=notes
+      insertParams = [longitude, latitude, type, areaMq, hw, hl, width_m, length_m, height_m, ...metaParams];
       insertSQL = `
         WITH centre AS (
           SELECT ST_Transform(ST_SetSRID(ST_MakePoint($1, $2), 4326), 32644) AS pt
         )
-        INSERT INTO nurseries (type, area_m2, geom, width_m, length_m, height_m, created_at)
+        INSERT INTO nurseries
+          (type, area_m2, geom, width_m, length_m, height_m,
+           name, coral_species, date_placement, depth_m, notes, created_at)
         SELECT $3, $4,
           ST_MakeEnvelope(ST_X(pt)-$5, ST_Y(pt)-$6, ST_X(pt)+$5, ST_Y(pt)+$6, 32644),
-          $7, $8, $9, NOW()
+          $7, $8, $9, $10, $11, $12::date, $13, $14, NOW()
         FROM centre
-        RETURNING id, type, area_m2, width_m, length_m, height_m, created_at,
-                  ST_AsGeoJSON(ST_Transform(geom, 4326)) AS geojson
+        RETURNING
+          id, type, area_m2, width_m, length_m, height_m,
+          name, coral_species,
+          date_placement,
+          depth_m, notes, created_at,
+          ST_X(ST_Centroid(ST_Transform(geom, 4326))) AS longitude,
+          ST_Y(ST_Centroid(ST_Transform(geom, 4326))) AS latitude
       `;
     } else {
+      // $1=lon  $2=lat  $3=type  $4=area  $5=radius  $6=height_m
+      // $7=name  $8=coral_species  $9=date_placement  $10=depth_m  $11=notes
+      insertParams = [longitude, latitude, type, areaMq, radius_m, height_m, ...metaParams];
       insertSQL = `
         WITH centre AS (
           SELECT ST_Transform(ST_SetSRID(ST_MakePoint($1, $2), 4326), 32644) AS pt
         )
-        INSERT INTO nurseries (type, area_m2, geom, radius_m, height_m, created_at)
-        SELECT $3, $4, ST_Buffer(pt, $5), $5, $6, NOW()
+        INSERT INTO nurseries
+          (type, area_m2, geom, radius_m, height_m,
+           name, coral_species, date_placement, depth_m, notes, created_at)
+        SELECT $3, $4, ST_Buffer(pt, $5), $5, $6, $7, $8, $9::date, $10, $11, NOW()
         FROM centre
-        RETURNING id, type, area_m2, radius_m, height_m, created_at,
-                  ST_AsGeoJSON(ST_Transform(geom, 4326)) AS geojson
+        RETURNING
+          id, type, area_m2, radius_m, height_m,
+          name, coral_species,
+          date_placement,
+          depth_m, notes, created_at,
+          ST_X(ST_Centroid(ST_Transform(geom, 4326))) AS longitude,
+          ST_Y(ST_Centroid(ST_Transform(geom, 4326))) AS latitude
       `;
-      insertParams = [longitude, latitude, type, areaMq, radius_m, height_m];
     }
 
     const { rows: [newRow] } = await client.query(insertSQL, insertParams);
@@ -283,15 +335,21 @@ router.post('/nurseries', async (req, res) => {
     res.status(201).json({
       message: 'Nursery added and scores recalculated.',
       nursery: {
-        id:         newRow.id,
-        type:       newRow.type,
-        area_m2:    newRow.area_m2,
-        width_m:    newRow.width_m   ?? null,
-        length_m:   newRow.length_m  ?? null,
-        radius_m:   newRow.radius_m  ?? null,
-        height_m:   newRow.height_m  ?? null,
-        geometry:   newRow.geojson ? JSON.parse(newRow.geojson) : null,
-        created_at: newRow.created_at,
+        id:             newRow.id,
+        type:           newRow.type,
+        area_m2:        newRow.area_m2,
+        width_m:        newRow.width_m        ?? null,
+        length_m:       newRow.length_m       ?? null,
+        radius_m:       newRow.radius_m       ?? null,
+        height_m:       newRow.height_m       ?? null,
+        name:           newRow.name           ?? null,
+        coral_species:  newRow.coral_species  ?? null,
+        date_placement: newRow.date_placement ?? null,
+        depth_m:        newRow.depth_m        ?? null,
+        notes:          newRow.notes          ?? null,
+        latitude:       newRow.latitude  != null ? parseFloat(newRow.latitude)  : null,
+        longitude:      newRow.longitude != null ? parseFloat(newRow.longitude) : null,
+        created_at:     newRow.created_at,
       },
       top5_updated_locations: top5,
     });
@@ -304,7 +362,83 @@ router.post('/nurseries', async (req, res) => {
   }
 });
 
-//  GET /stats 
+//  PATCH /nurseries/:id
+// Updates editable metadata/dimension fields for an existing nursery.
+
+router.patch('/nurseries/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) {
+    return res.status(422).json({ error: 'Invalid nursery id.' });
+  }
+
+  const { coral_species, notes, depth_m, height_m, width_m, length_m, radius_m } = req.body;
+
+  const sets   = [];
+  const params = [];
+  const add    = (col, val) => { sets.push(`${col} = $${params.length + 1}`); params.push(val); };
+
+  if (coral_species !== undefined) add('coral_species', coral_species);
+  if (notes         !== undefined) add('notes',         notes);
+  if (depth_m       !== undefined) add('depth_m',       depth_m);
+  if (height_m      !== undefined) add('height_m',      height_m);
+  if (width_m       !== undefined) add('width_m',       width_m);
+  if (length_m      !== undefined) add('length_m',      length_m);
+  if (radius_m      !== undefined) add('radius_m',      radius_m);
+
+  if (sets.length === 0) {
+    return res.status(422).json({ error: 'No fields to update.' });
+  }
+  params.push(id);
+
+  try {
+    const { rows } = await pool.query(
+      `UPDATE nurseries SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING id`,
+      params
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Nursery not found.' });
+    }
+    res.json({ message: 'Nursery updated.', id: rows[0].id });
+  } catch (err) {
+    console.error('PATCH /api/gis/nurseries/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+//  GET /restoration-zone
+// Returns the stored restoration zone polygon as an array of {latitude, longitude} points + area.
+
+router.get('/restoration-zone', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT id, label, area_m2, ST_AsGeoJSON(geom) AS geojson
+      FROM restoration_zone
+      ORDER BY id
+      LIMIT 1
+    `);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'No restoration zone found.' });
+    }
+    const row  = rows[0];
+    const geom = JSON.parse(row.geojson);
+    // GeoJSON polygon outer ring: each point is [lon, lat]
+    const coordinates = geom.coordinates[0].map(([lon, lat]) => ({
+      latitude:  lat,
+      longitude: lon,
+    }));
+    res.json({
+      id:          row.id,
+      label:       row.label,
+      area_m2:     row.area_m2,
+      coordinates,
+    });
+  } catch (err) {
+    console.error('GET /api/gis/restoration-zone:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+//  GET /stats
 
 router.get('/stats', async (req, res) => {
   try {
