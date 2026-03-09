@@ -8,6 +8,9 @@ const mountRoutes       = require('./src/routes');
 
 const app = express();
 
+// Trust reverse proxy (required for HuggingFace Spaces and any proxy setup)
+app.set('trust proxy', 1);
+
 // Global Middleware
 
 app.use(cors());
