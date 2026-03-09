@@ -133,6 +133,103 @@ async function runMigrations() {
       'idx_recorded_at'
     );
 
+    // ── Auth: locations table (research sites) ──────────────────────────────
+    await run(`
+      CREATE TABLE IF NOT EXISTS locations (
+        id          SERIAL PRIMARY KEY,
+        name        TEXT NOT NULL,
+        slug        TEXT UNIQUE NOT NULL,
+        center_lat  FLOAT,
+        center_lon  FLOAT,
+        description TEXT,
+        created_at  TIMESTAMPTZ DEFAULT NOW()
+      )`, 'locations table');
+
+    // Seed Port City as location id=1
+    await run(`
+      INSERT INTO locations (name, slug, center_lat, center_lon, description)
+      SELECT 'Port City, Colombo', 'port-city', 6.9297, 79.8476,
+             'Colombo Port City Coral Restoration Site'
+      WHERE NOT EXISTS (SELECT 1 FROM locations WHERE slug = 'port-city')
+    `, 'locations seed port-city');
+
+    // ── Auth: users table ────────────────────────────────────────────────────
+    await run(`
+      CREATE TABLE IF NOT EXISTS users (
+        id                   SERIAL PRIMARY KEY,
+        name                 TEXT NOT NULL,
+        nic                  TEXT UNIQUE NOT NULL,
+        email                TEXT UNIQUE NOT NULL,
+        password_hash        TEXT NOT NULL,
+        email_verified       BOOLEAN DEFAULT false,
+        verification_code    TEXT,
+        verification_expires TIMESTAMPTZ,
+        created_at           TIMESTAMPTZ DEFAULT NOW()
+      )`, 'users table');
+
+    // ── Auth: user_locations junction table ──────────────────────────────────
+    await run(`
+      CREATE TABLE IF NOT EXISTS user_locations (
+        user_id     INTEGER REFERENCES users(id)     ON DELETE CASCADE,
+        location_id INTEGER REFERENCES locations(id) ON DELETE CASCADE,
+        PRIMARY KEY (user_id, location_id)
+      )`, 'user_locations table');
+
+    // ── location_id on all data tables (backfill existing rows → 1 = Port City)
+    await run(
+      `ALTER TABLE nurseries ADD COLUMN IF NOT EXISTS location_id INTEGER REFERENCES locations(id) DEFAULT 1`,
+      'nurseries.location_id'
+    );
+    await run(
+      `UPDATE nurseries SET location_id = 1 WHERE location_id IS NULL`,
+      'nurseries.location_id backfill'
+    );
+
+    await run(
+      `ALTER TABLE restoration_zone ADD COLUMN IF NOT EXISTS location_id INTEGER REFERENCES locations(id) DEFAULT 1`,
+      'restoration_zone.location_id'
+    );
+    await run(
+      `UPDATE restoration_zone SET location_id = 1 WHERE location_id IS NULL`,
+      'restoration_zone.location_id backfill'
+    );
+
+    await run(
+      `ALTER TABLE candidate_points ADD COLUMN IF NOT EXISTS location_id INTEGER REFERENCES locations(id) DEFAULT 1`,
+      'candidate_points.location_id'
+    );
+    await run(
+      `UPDATE candidate_points SET location_id = 1 WHERE location_id IS NULL`,
+      'candidate_points.location_id backfill'
+    );
+
+    await run(
+      `ALTER TABLE bleaching_history ADD COLUMN IF NOT EXISTS location_id INTEGER REFERENCES locations(id) DEFAULT 1`,
+      'bleaching_history.location_id'
+    );
+    await run(
+      `UPDATE bleaching_history SET location_id = 1 WHERE location_id IS NULL`,
+      'bleaching_history.location_id backfill'
+    );
+
+    await run(
+      `ALTER TABLE coral_data ADD COLUMN IF NOT EXISTS location_id INTEGER REFERENCES locations(id) DEFAULT 1`,
+      'coral_data.location_id'
+    );
+    await run(
+      `UPDATE coral_data SET location_id = 1 WHERE location_id IS NULL`,
+      'coral_data.location_id backfill'
+    );
+
+    await run(
+      `ALTER TABLE coral_records ADD COLUMN IF NOT EXISTS location_id INTEGER REFERENCES locations(id) DEFAULT 1`,
+      'coral_records.location_id'
+    );
+    await run(
+      `UPDATE coral_records SET location_id = 1 WHERE location_id IS NULL`,
+      'coral_records.location_id backfill'
+    );
+
     console.log('[Migrations] Complete ✓');
   } finally {
     client.release();

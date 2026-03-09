@@ -8,7 +8,7 @@ const router = express.Router();
 // Nurseries must be at least this far apart (matches Python scoring service)
 const MIN_SPACING_M = 2;
 
-//  Nursery type metadata 
+//  Nursery type metadata
 
 const NURSERY_TYPE_INFO = {
   table: {
@@ -62,18 +62,15 @@ router.get('/nursery-types', (req, res) => {
 
 router.get('/candidate-points', async (req, res) => {
   try {
-    // available param — default true if omitted
-    const whereClause = req.query.available === 'false'
-      ? 'WHERE is_available = false'
-      : 'WHERE is_available = true';
-
-    // limit param — clamp to 1–500, no limit if omitted
+    const availFilter = req.query.available === 'false' ? 'false' : 'true';
     const limitClause = req.query.limit
       ? ` LIMIT ${Math.max(1, Math.min(500, parseInt(req.query.limit) || 120))}`
       : '';
 
     const { rows } = await pool.query(
-      POINT_SELECT + `${whereClause} ORDER BY suitability_score DESC${limitClause}`
+      POINT_SELECT +
+      `WHERE is_available = ${availFilter} AND location_id = $1 ORDER BY suitability_score DESC${limitClause}`,
+      [req.locationId]
     );
     res.json({ count: rows.length, points: rows });
   } catch (err) {
@@ -82,14 +79,14 @@ router.get('/candidate-points', async (req, res) => {
   }
 });
 
-//  GET /top-locations?limit=10 
+//  GET /top-locations?limit=10
 
 router.get('/top-locations', async (req, res) => {
   const limit = Math.max(1, Math.min(300, parseInt(req.query.limit) || 10));
   try {
     const { rows } = await pool.query(
-      POINT_SELECT + `WHERE is_available = true ORDER BY suitability_score DESC LIMIT $1`,
-      [limit]
+      POINT_SELECT + `WHERE is_available = true AND location_id = $1 ORDER BY suitability_score DESC LIMIT $2`,
+      [req.locationId, limit]
     );
     res.json({ count: rows.length, limit, points: rows });
   } catch (err) {
@@ -98,7 +95,7 @@ router.get('/top-locations', async (req, res) => {
   }
 });
 
-//  POST /top-locations-by-nursery 
+//  POST /top-locations-by-nursery
 // Calls the Python scoring service to apply dimension-aware weights
 
 router.post('/top-locations-by-nursery', async (req, res) => {
@@ -120,8 +117,11 @@ router.post('/top-locations-by-nursery', async (req, res) => {
       radiusM: radius_m,
     });
 
-    // 2. Fetch all available points from DB
-    const { rows } = await pool.query(POINT_SELECT + `WHERE is_available = true`);
+    // 2. Fetch all available points from DB for this location
+    const { rows } = await pool.query(
+      POINT_SELECT + `WHERE is_available = true AND location_id = $1`,
+      [req.locationId]
+    );
 
     // 3. Ask scoring service to rank with dimension-aware weights
     const top = await scoringApi.scorePoints(rows, { requiredArea, limit });
@@ -160,8 +160,9 @@ router.get('/nurseries', async (req, res) => {
         ST_Y(ST_Centroid(ST_Transform(geom, 4326))) AS latitude,
         created_at
       FROM nurseries
+      WHERE location_id = $1
       ORDER BY created_at DESC
-    `);
+    `, [req.locationId]);
     const nurseries = rows.map(r => ({
       id:             r.id,
       type:           r.type,
@@ -235,13 +236,14 @@ router.post('/nurseries', async (req, res) => {
       date_placement|| null,
       depth_m       != null ? parseFloat(depth_m) : null,
       notes         || null,
+      req.locationId,
     ];
 
     if (type === 'table') {
       const hw = width_m  / 2;
       const hl = length_m / 2;
-      // $1=lon  $2=lat  $3=type  $4=area  $5=hw  $6=hl  $7=width_m  $8=length_m  $9=height_m
-      // $10=name  $11=coral_species  $12=date_placement  $13=depth_m  $14=notes
+      // $1=lon $2=lat $3=type $4=area $5=hw $6=hl $7=w $8=l $9=h
+      // $10=name $11=species $12=date $13=depth $14=notes $15=location_id
       insertParams = [longitude, latitude, type, areaMq, hw, hl, width_m, length_m, height_m, ...metaParams];
       insertSQL = `
         WITH centre AS (
@@ -249,10 +251,10 @@ router.post('/nurseries', async (req, res) => {
         )
         INSERT INTO nurseries
           (type, area_m2, geom, width_m, length_m, height_m,
-           name, coral_species, date_placement, depth_m, notes, created_at)
+           name, coral_species, date_placement, depth_m, notes, location_id, created_at)
         SELECT $3, $4,
           ST_MakeEnvelope(ST_X(pt)-$5, ST_Y(pt)-$6, ST_X(pt)+$5, ST_Y(pt)+$6, 32644),
-          $7, $8, $9, $10, $11, $12::date, $13, $14, NOW()
+          $7, $8, $9, $10, $11, $12::date, $13, $14, $15, NOW()
         FROM centre
         RETURNING
           id, type, area_m2, width_m, length_m, height_m,
@@ -263,8 +265,8 @@ router.post('/nurseries', async (req, res) => {
           ST_Y(ST_Centroid(ST_Transform(geom, 4326))) AS latitude
       `;
     } else {
-      // $1=lon  $2=lat  $3=type  $4=area  $5=radius  $6=height_m
-      // $7=name  $8=coral_species  $9=date_placement  $10=depth_m  $11=notes
+      // $1=lon $2=lat $3=type $4=area $5=radius $6=height
+      // $7=name $8=species $9=date $10=depth $11=notes $12=location_id
       insertParams = [longitude, latitude, type, areaMq, radius_m, height_m, ...metaParams];
       insertSQL = `
         WITH centre AS (
@@ -272,8 +274,8 @@ router.post('/nurseries', async (req, res) => {
         )
         INSERT INTO nurseries
           (type, area_m2, geom, radius_m, height_m,
-           name, coral_species, date_placement, depth_m, notes, created_at)
-        SELECT $3, $4, ST_Buffer(pt, $5), $5, $6, $7, $8, $9::date, $10, $11, NOW()
+           name, coral_species, date_placement, depth_m, notes, location_id, created_at)
+        SELECT $3, $4, ST_Buffer(pt, $5), $5, $6, $7, $8, $9::date, $10, $11, $12, NOW()
         FROM centre
         RETURNING
           id, type, area_m2, radius_m, height_m,
@@ -287,26 +289,33 @@ router.post('/nurseries', async (req, res) => {
 
     const { rows: [newRow] } = await client.query(insertSQL, insertParams);
 
-    // Recalculate dist_nursery_m for all points using PostGIS
+    // Recalculate dist_nursery_m for all points in this location using PostGIS
     await client.query(`
       UPDATE candidate_points cp
-      SET dist_nursery_m = (SELECT MIN(ST_Distance(cp.geom, n.geom)) FROM nurseries n)
-    `);
+      SET dist_nursery_m = (
+        SELECT MIN(ST_Distance(cp.geom, n.geom))
+        FROM nurseries n
+        WHERE n.location_id = $1
+      )
+      WHERE cp.location_id = $1
+    `, [req.locationId]);
 
     // Mark points too close to any nursery as unavailable
     await client.query(`
       UPDATE candidate_points
       SET is_available = CASE WHEN dist_nursery_m <= $1 THEN false ELSE true END
-    `, [MIN_SPACING_M]);
+      WHERE location_id = $2
+    `, [MIN_SPACING_M, req.locationId]);
 
-    // Fetch all points and send to scoring service for recalculation
+    // Fetch all points for this location and send to scoring service for recalculation
     const { rows: allPoints } = await client.query(`
       SELECT fid, dist_nursery_m, space_area_m2, dist_shore_m, depth_band
       FROM candidate_points
-      WHERE dist_nursery_m IS NOT NULL
+      WHERE location_id = $1
+        AND dist_nursery_m IS NOT NULL
         AND space_area_m2  IS NOT NULL
         AND dist_shore_m   IS NOT NULL
-    `);
+    `, [req.locationId]);
 
     const scoreList = await scoringApi.recalculateAllScores(allPoints);
     // scoreList = [{ fid, suitability_score }, ...]
@@ -321,15 +330,16 @@ router.post('/nurseries', async (req, res) => {
           SELECT unnest($1::bigint[]) AS fid,
                  unnest($2::float[])  AS score
         ) AS v
-        WHERE cp.fid = v.fid
-      `, [fids, scores]);
+        WHERE cp.fid = v.fid AND cp.location_id = $3
+      `, [fids, scores, req.locationId]);
     }
 
     await client.query('COMMIT');
 
     // Return new nursery + updated top 5 locations
     const { rows: top5 } = await pool.query(
-      POINT_SELECT + `WHERE is_available = true ORDER BY suitability_score DESC LIMIT 5`
+      POINT_SELECT + `WHERE is_available = true AND location_id = $1 ORDER BY suitability_score DESC LIMIT 5`,
+      [req.locationId]
     );
 
     res.status(201).json({
@@ -389,10 +399,11 @@ router.patch('/nurseries/:id', async (req, res) => {
     return res.status(422).json({ error: 'No fields to update.' });
   }
   params.push(id);
+  params.push(req.locationId);
 
   try {
     const { rows } = await pool.query(
-      `UPDATE nurseries SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING id`,
+      `UPDATE nurseries SET ${sets.join(', ')} WHERE id = $${params.length - 1} AND location_id = $${params.length} RETURNING id`,
       params
     );
     if (rows.length === 0) {
@@ -413,9 +424,10 @@ router.get('/restoration-zone', async (req, res) => {
     const { rows } = await pool.query(`
       SELECT id, label, area_m2, ST_AsGeoJSON(geom) AS geojson
       FROM restoration_zone
+      WHERE location_id = $1
       ORDER BY id
       LIMIT 1
-    `);
+    `, [req.locationId]);
     if (rows.length === 0) {
       return res.status(404).json({ error: 'No restoration zone found.' });
     }
@@ -454,7 +466,8 @@ router.get('/stats', async (req, res) => {
         COUNT(*) FILTER (WHERE depth_band = '3-7m')      AS band_3_7m,
         COUNT(*) FILTER (WHERE depth_band = '7-10m')     AS band_7_10m
       FROM candidate_points
-    `);
+      WHERE location_id = $1
+    `, [req.locationId]);
     res.json({
       total:       parseInt(s.total),
       available:   parseInt(s.available),
