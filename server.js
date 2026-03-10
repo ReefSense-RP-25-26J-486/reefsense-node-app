@@ -3,7 +3,7 @@ require('dotenv').config();
 const app                  = require('./app');
 const { runMigrations }    = require('./src/migrations');
 
-const PORT = process.env.PORT || 7860;
+const PORT = process.env.PORT || 3000;
 
 runMigrations()
   .then(() => {

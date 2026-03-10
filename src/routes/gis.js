@@ -372,6 +372,61 @@ router.post('/nurseries', async (req, res) => {
   }
 });
 
+//  DELETE /nurseries/:id
+// Deletes a nursery and recalculates candidate-point availability for this location.
+
+router.delete('/nurseries/:id', async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) {
+    return res.status(422).json({ error: 'Invalid nursery id.' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Delete — guard by location_id so users can't delete another site's nursery
+    const { rowCount } = await client.query(
+      `DELETE FROM nurseries WHERE id = $1 AND location_id = $2`,
+      [id, req.locationId]
+    );
+    if (rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Nursery not found.' });
+    }
+
+    // Recalculate nearest-nursery distance for all points in this location
+    await client.query(`
+      UPDATE candidate_points cp
+      SET dist_nursery_m = (
+        SELECT MIN(ST_Distance(cp.geom, n.geom))
+        FROM nurseries n
+        WHERE n.location_id = $1
+      )
+      WHERE cp.location_id = $1
+    `, [req.locationId]);
+
+    // Re-open any points that are now far enough from all remaining nurseries
+    await client.query(`
+      UPDATE candidate_points
+      SET is_available = CASE
+        WHEN dist_nursery_m IS NULL OR dist_nursery_m > $1 THEN true
+        ELSE false
+      END
+      WHERE location_id = $2
+    `, [MIN_SPACING_M, req.locationId]);
+
+    await client.query('COMMIT');
+    res.json({ message: 'Nursery deleted.', id });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('DELETE /api/gis/nurseries/:id:', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+});
+
 //  PATCH /nurseries/:id
 // Updates editable metadata/dimension fields for an existing nursery.
 
