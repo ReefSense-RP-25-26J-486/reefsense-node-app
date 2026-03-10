@@ -4,14 +4,17 @@ const coralDataRouter = require('./coralData');
 const bleachingRouter = require('./bleaching');
 const growthRouter    = require('./growth');
 const authMiddleware  = require('../middleware/auth');
+const optionalAuth    = require('../middleware/optionalAuth');
 
 module.exports = function mountRoutes(app) {
   // Public — no JWT required
   app.use('/api/auth',      authRouter);
 
-  // Protected — JWT + X-Location-ID required for all data routes
+  // Fully protected — JWT + X-Location-ID required
   app.use('/api/gis',       authMiddleware, gisRouter);
-  app.use('/api/data',      authMiddleware, coralDataRouter);
   app.use('/api/bleaching', authMiddleware, bleachingRouter);
-  app.use('/api/growth',    authMiddleware, growthRouter);
+
+  // Optional auth — work with or without JWT; X-Location-ID defaults to 1
+  app.use('/api/data',      optionalAuth, coralDataRouter);
+  app.use('/api/growth',    optionalAuth, growthRouter);
 };
