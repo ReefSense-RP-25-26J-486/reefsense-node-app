@@ -37,25 +37,44 @@ router.post('/register', async (req, res) => {
   }
 
   try {
-    // Check uniqueness
+    // Check if account already exists
     const { rows: existing } = await pool.query(
-      `SELECT id FROM users WHERE email = $1 OR nic = $2 LIMIT 1`,
+      `SELECT id, email_verified FROM users WHERE email = $1 OR nic = $2 LIMIT 1`,
       [email.toLowerCase(), nic]
     );
+
     if (existing.length > 0) {
-      return res.status(409).json({ error: 'An account with this email or NIC already exists.' });
+      if (existing[0].email_verified) {
+        // Fully verified account — block registration
+        return res.status(409).json({ error: 'An account with this email or NIC already exists.' });
+      }
+      // Unverified account — refresh the OTP and resend so the user can continue
+      const code    = generateOTP();
+      const expires = new Date(Date.now() + 15 * 60 * 1000);
+      const password_hash = await bcrypt.hash(password, 12);
+
+      await pool.query(
+        `UPDATE users
+         SET name = $1, password_hash = $2, verification_code = $3, verification_expires = $4
+         WHERE id = $5`,
+        [name.trim(), password_hash, code, expires, existing[0].id]
+      );
+
+      await sendVerificationEmail(email, code);
+
+      return res.status(201).json({
+        message: `Verification code sent to ${email}. Please check your inbox.`,
+      });
     }
 
+    // Brand new account
     const password_hash = await bcrypt.hash(password, 12);
     const code          = generateOTP();
     const expires       = new Date(Date.now() + 15 * 60 * 1000); // 15 min
 
     await pool.query(
       `INSERT INTO users (name, nic, email, password_hash, email_verified, verification_code, verification_expires)
-       VALUES ($1, $2, $3, $4, false, $5, $6)
-       ON CONFLICT (email) DO UPDATE
-         SET verification_code    = EXCLUDED.verification_code,
-             verification_expires = EXCLUDED.verification_expires`,
+       VALUES ($1, $2, $3, $4, false, $5, $6)`,
       [name.trim(), nic.trim(), email.toLowerCase(), password_hash, code, expires]
     );
 
