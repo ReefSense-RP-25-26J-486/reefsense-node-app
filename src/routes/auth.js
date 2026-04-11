@@ -85,7 +85,7 @@ router.post('/register', async (req, res) => {
     });
   } catch (err) {
     console.error('POST /api/auth/register:', err.message);
-    return res.status(500).json({ error: 'Registration failed. Please try again.' });
+    return res.status(500).json({ error: 'Registration failed. Please try again.', debug: err.message });
   }
 });
 
