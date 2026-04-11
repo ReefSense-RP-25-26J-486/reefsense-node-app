@@ -49,11 +49,12 @@ router.post(
       // Upload annotated result to Cloudinary
       const annotatedUpload = await uploadAnnotatedImage(annotatedImage, mimetype);
 
-      // Persist to PostgreSQL
+      // Persist to PostgreSQL — tag with the authenticated user's selected location
       await saveAnalysis({
         location,
         date,
         nursery,
+        location_id:          req.locationId,
         coral_detected:       stats.coral_detected,
         bleaching_detected:   stats.bleaching_detected,
         bleaching_percentage: stats.bleaching_percentage,
@@ -82,7 +83,7 @@ router.get('/history', async (req, res, next) => {
     const nursery  = req.query.nursery?.trim()  || undefined;
     const date     = req.query.date?.trim()     || undefined;
 
-    const records = await getHistory({ location, nursery, date });
+    const records = await getHistory({ location, nursery, date, location_id: req.locationId });
 
     return res.status(200).json({
       filters: { location, nursery, date },
