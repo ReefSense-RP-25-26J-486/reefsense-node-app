@@ -43,31 +43,36 @@ router.post('/register', async (req, res) => {
       [email.toLowerCase(), nic]
     );
 
+    const code    = generateOTP();
+    const expires = new Date(Date.now() + 15 * 60 * 1000);
+
     if (existing.length > 0) {
       if (existing[0].email_verified) {
         return res.status(409).json({ error: 'An account with this email or NIC already exists.' });
       }
-      // Unverified account — update details and auto-verify
+      // Unverified account — update details and refresh OTP
       const password_hash = await bcrypt.hash(password, 12);
       await pool.query(
         `UPDATE users
-         SET name = $1, password_hash = $2, email_verified = true,
-             verification_code = NULL, verification_expires = NULL
-         WHERE id = $3`,
-        [name.trim(), password_hash, existing[0].id]
+         SET name = $1, password_hash = $2,
+             verification_code = $3, verification_expires = $4
+         WHERE id = $5`,
+        [name.trim(), password_hash, code, expires, existing[0].id]
       );
-      return res.status(201).json({ message: 'Account updated. Please select your locations.' });
+      await sendVerificationEmail(email.toLowerCase(), code);
+      return res.status(201).json({ message: 'Verification code sent. Please check your inbox.' });
     }
 
-    // Brand new account — create and auto-verify (no email OTP required)
+    // Brand new account — create unverified and send OTP
     const password_hash = await bcrypt.hash(password, 12);
     await pool.query(
-      `INSERT INTO users (name, nic, email, password_hash, email_verified)
-       VALUES ($1, $2, $3, $4, true)`,
-      [name.trim(), nic.trim(), email.toLowerCase(), password_hash]
+      `INSERT INTO users (name, nic, email, password_hash, email_verified, verification_code, verification_expires)
+       VALUES ($1, $2, $3, $4, false, $5, $6)`,
+      [name.trim(), nic.trim(), email.toLowerCase(), password_hash, code, expires]
     );
 
-    return res.status(201).json({ message: 'Account created. Please select your locations.' });
+    await sendVerificationEmail(email.toLowerCase(), code);
+    return res.status(201).json({ message: 'Verification code sent. Please check your inbox.' });
   } catch (err) {
     console.error('POST /api/auth/register:', err.message);
     return res.status(500).json({ error: 'Registration failed. Please try again.' });
