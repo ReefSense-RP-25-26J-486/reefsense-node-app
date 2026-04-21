@@ -64,7 +64,7 @@ router.post('/analyze', upload.single('file'), async (req, res) => {
 
 // POST /records — save a growth record tagged with the selected location
 router.post('/records', async (req, res) => {
-  const { coral_id, species, area_cm2, confidence, cnn_feed_image } = req.body;
+  const { coral_id, species, area_cm2, confidence, cnn_feed_image, nursery_id } = req.body;
 
   if (!coral_id || !species || area_cm2 == null) {
     return res.status(400).json({
@@ -81,10 +81,10 @@ router.post('/records', async (req, res) => {
     );
 
     const { rows } = await pool.query(
-      `INSERT INTO coral_records (coral_id, species, area_cm2, confidence, cnn_feed_image, location_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO coral_records (coral_id, species, area_cm2, confidence, cnn_feed_image, location_id, nursery_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [coral_id, species, area_cm2, confidence ?? 0, cnn_feed_image ?? '', req.locationId]
+      [coral_id, species, area_cm2, confidence ?? 0, cnn_feed_image ?? '', req.locationId, nursery_id ?? null]
     );
 
     const lastRecord  = prior[0] || null;
