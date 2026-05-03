@@ -230,6 +230,12 @@ async function runMigrations() {
       'coral_records.location_id backfill'
     );
 
+    // Growth: link coral records to a nursery
+    await run(
+      `ALTER TABLE coral_records ADD COLUMN IF NOT EXISTS nursery_id INTEGER REFERENCES nurseries(id)`,
+      'coral_records.nursery_id'
+    );
+
     console.log('[Migrations] Complete ✓');
   } finally {
     client.release();

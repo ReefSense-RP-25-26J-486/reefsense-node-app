@@ -1,11 +1,12 @@
-const express = require('express');
-const pool    = require('../config/db');
+const express        = require('express');
+const { randomInt }  = require('crypto');
+const pool           = require('../config/db');
 
 const router = express.Router();
 
 // Helper: Generate unique CT + 4 digits record code
 function generateUniqueCode() {
-    const digits = Math.floor(1000 + Math.random() * 9000);
+    const digits = randomInt(1000, 10000);
     return `CT${digits}`;
 }
 

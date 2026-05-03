@@ -10,7 +10,22 @@ const app = express();
 
 // Global Middleware
 
-app.use(cors());
+const allowedOrigins = [
+  'https://reefsense-web-app.vercel.app',
+  'http://localhost:3000',
+  'http://localhost:3001',
+];
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(requestLogger);
 

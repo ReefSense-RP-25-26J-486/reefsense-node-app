@@ -1,8 +1,9 @@
 
-const express  = require('express');
-const bcrypt   = require('bcryptjs');
-const jwt      = require('jsonwebtoken');
-const pool     = require('../config/db');
+const express      = require('express');
+const bcrypt       = require('bcryptjs');
+const jwt          = require('jsonwebtoken');
+const { randomInt } = require('crypto');
+const pool         = require('../config/db');
 const { sendVerificationEmail } = require('../services/email');
 const authMiddleware = require('../middleware/auth');
 const { jwtOnly }   = require('../middleware/auth');
@@ -12,7 +13,7 @@ const router = express.Router();
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function generateOTP() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  return String(randomInt(100000, 1000000));
 }
 
 function signToken(user, locationIds) {
@@ -43,46 +44,36 @@ router.post('/register', async (req, res) => {
       [email.toLowerCase(), nic]
     );
 
+    const code    = generateOTP();
+    const expires = new Date(Date.now() + 15 * 60 * 1000);
+
     if (existing.length > 0) {
       if (existing[0].email_verified) {
-        // Fully verified account — block registration
         return res.status(409).json({ error: 'An account with this email or NIC already exists.' });
       }
-      // Unverified account — refresh the OTP and resend so the user can continue
-      const code    = generateOTP();
-      const expires = new Date(Date.now() + 15 * 60 * 1000);
+      // Unverified account — update details and refresh OTP
       const password_hash = await bcrypt.hash(password, 12);
-
       await pool.query(
         `UPDATE users
-         SET name = $1, password_hash = $2, verification_code = $3, verification_expires = $4
+         SET name = $1, password_hash = $2,
+             verification_code = $3, verification_expires = $4
          WHERE id = $5`,
         [name.trim(), password_hash, code, expires, existing[0].id]
       );
-
-      await sendVerificationEmail(email, code);
-
-      return res.status(201).json({
-        message: `Verification code sent to ${email}. Please check your inbox.`,
-      });
+      await sendVerificationEmail(email.toLowerCase(), code);
+      return res.status(201).json({ message: 'Verification code sent. Please check your inbox.' });
     }
 
-    // Brand new account
+    // Brand new account — create unverified and send OTP
     const password_hash = await bcrypt.hash(password, 12);
-    const code          = generateOTP();
-    const expires       = new Date(Date.now() + 15 * 60 * 1000); // 15 min
-
     await pool.query(
       `INSERT INTO users (name, nic, email, password_hash, email_verified, verification_code, verification_expires)
        VALUES ($1, $2, $3, $4, false, $5, $6)`,
       [name.trim(), nic.trim(), email.toLowerCase(), password_hash, code, expires]
     );
 
-    await sendVerificationEmail(email, code);
-
-    return res.status(201).json({
-      message: `Verification code sent to ${email}. Please check your inbox.`,
-    });
+    await sendVerificationEmail(email.toLowerCase(), code);
+    return res.status(201).json({ message: 'Verification code sent. Please check your inbox.' });
   } catch (err) {
     console.error('POST /api/auth/register:', err.message);
     return res.status(500).json({ error: 'Registration failed. Please try again.' });
