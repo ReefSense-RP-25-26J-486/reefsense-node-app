@@ -3,14 +3,14 @@ name: Sync to HuggingFace Space
 on:
   push:
     branches:
-      - dev
+      - gis-nursery-placement   # triggers on every push to this branch
 
 jobs:
   sync:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -22,7 +22,5 @@ jobs:
         run: |
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Action"
-
           git remote add huggingface https://senithudara:${HF_TOKEN}@huggingface.co/spaces/senithudara/reefsense-node-app
-
           git push huggingface HEAD:main --force
