@@ -3,7 +3,7 @@ name: CI/CD — Security Scan + Deploy to Azure
 on:
   push:
     branches:
-      - dev
+      - main
   workflow_dispatch:
 
 jobs:
