@@ -1,8 +1,9 @@
 
-const express  = require('express');
-const bcrypt   = require('bcryptjs');
-const jwt      = require('jsonwebtoken');
-const pool     = require('../config/db');
+const express      = require('express');
+const bcrypt       = require('bcryptjs');
+const jwt          = require('jsonwebtoken');
+const { randomInt } = require('crypto');
+const pool         = require('../config/db');
 const { sendVerificationEmail } = require('../services/email');
 const authMiddleware = require('../middleware/auth');
 const { jwtOnly }   = require('../middleware/auth');
@@ -12,7 +13,7 @@ const router = express.Router();
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function generateOTP() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  return String(randomInt(100000, 1000000));
 }
 
 function signToken(user, locationIds) {
