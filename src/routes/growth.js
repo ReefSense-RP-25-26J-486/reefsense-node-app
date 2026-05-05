@@ -4,6 +4,7 @@ const axios    = require('axios');
 const FormData = require('form-data');
 const pool = require('../config/db');
 const { uploadGrowthImage } = require('../services/cloudinary');
+const { extractImageLocation } = require('../services/imageMetadata');
 
 const router = express.Router();
 
@@ -35,6 +36,12 @@ router.post('/analyze', upload.single('file'), async (req, res) => {
   }
 
   try {
+    // Extract GPS from raw JPEG bytes before forwarding — same method as bleaching.
+    // This is the only reliable approach on Android where client-side EXIF is
+    // stripped by image crop/compression libraries.
+    const { image_latitude, image_longitude } = extractImageLocation(req.file.buffer);
+    console.log(`[Growth/analyze] GPS from EXIF: lat=${image_latitude}, lon=${image_longitude}`);
+
     const formData = new FormData();
     formData.append('file', req.file.buffer, {
       filename:    req.file.originalname || 'image.jpg',
@@ -55,7 +62,9 @@ router.post('/analyze', upload.single('file'), async (req, res) => {
     const { enhanced_image, ...payload } = response.data;
     const detectionCount = Array.isArray(payload.detections) ? payload.detections.length : '?';
     console.log(`[Growth/analyze] HF OK — ${detectionCount} detection(s)`);
-    return res.status(200).json(payload);
+
+    // Return GPS alongside the HF payload so the app can store it with the record
+    return res.status(200).json({ ...payload, image_latitude, image_longitude });
   } catch (err) {
     if (err.response) {
       console.error(`[Growth/analyze] HF error ${err.response.status}:`, JSON.stringify(err.response.data).slice(0, 300));
