@@ -236,6 +236,28 @@ async function runMigrations() {
       'coral_records.nursery_id'
     );
 
+    // Growth: GPS coordinates from image capture
+    await run(
+      `ALTER TABLE coral_records ADD COLUMN IF NOT EXISTS latitude FLOAT`,
+      'coral_records.latitude'
+    );
+    await run(
+      `ALTER TABLE coral_records ADD COLUMN IF NOT EXISTS longitude FLOAT`,
+      'coral_records.longitude'
+    );
+
+    // Growth: free-text observation remarks
+    await run(
+      `ALTER TABLE coral_records ADD COLUMN IF NOT EXISTS remarks TEXT`,
+      'coral_records.remarks'
+    );
+
+    // Growth: Cloudinary URL for annotated image
+    await run(
+      `ALTER TABLE coral_records ADD COLUMN IF NOT EXISTS image_url TEXT`,
+      'coral_records.image_url'
+    );
+
     console.log('[Migrations] Complete ✓');
   } finally {
     client.release();

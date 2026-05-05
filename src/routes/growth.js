@@ -3,6 +3,7 @@ const multer   = require('multer');
 const axios    = require('axios');
 const FormData = require('form-data');
 const pool = require('../config/db');
+const { uploadGrowthImage } = require('../services/cloudinary');
 
 const router = express.Router();
 
@@ -40,23 +41,34 @@ router.post('/analyze', upload.single('file'), async (req, res) => {
       contentType: req.file.mimetype,
     });
 
+    console.log(`[Growth/analyze] forwarding ${req.file.size} byte image to HF space`);
     const response = await axios.post(`${hfUrl}/predict`, formData, {
       headers: { ...formData.getHeaders(), 'x-api-key': apiKey },
       timeout: 120_000,
+      maxContentLength: Infinity,
+      maxBodyLength:    Infinity,
     });
 
-    return res.status(200).json(response.data);
+    // Strip enhanced_image from the response — it is never rendered in the app
+    // but can be 10–30 MB of base64 for large iPhone photos, causing the mobile
+    // fetch to fail while buffering the full JSON payload.
+    const { enhanced_image, ...payload } = response.data;
+    const detectionCount = Array.isArray(payload.detections) ? payload.detections.length : '?';
+    console.log(`[Growth/analyze] HF OK — ${detectionCount} detection(s)`);
+    return res.status(200).json(payload);
   } catch (err) {
     if (err.response) {
+      console.error(`[Growth/analyze] HF error ${err.response.status}:`, JSON.stringify(err.response.data).slice(0, 300));
       return res.status(err.response.status).json({
         error:   'HuggingFace inference failed',
         details: err.response.data,
       });
     }
     if (err.code === 'ECONNABORTED') {
+      console.error('[Growth/analyze] HF timeout after 120s');
       return res.status(504).json({ error: 'HuggingFace request timed out' });
     }
-    console.error('Growth HF error:', err.message);
+    console.error('[Growth/analyze] unexpected error:', err.message);
     return res.status(500).json({ error: 'Failed to reach AI service' });
   }
 });
@@ -64,7 +76,7 @@ router.post('/analyze', upload.single('file'), async (req, res) => {
 
 // POST /records — save a growth record tagged with the selected location
 router.post('/records', async (req, res) => {
-  const { coral_id, species, area_cm2, confidence, cnn_feed_image, nursery_id } = req.body;
+  const { coral_id, species, area_cm2, confidence, cnn_feed_image, nursery_id, latitude, longitude, remarks } = req.body;
 
   if (!coral_id || !species || area_cm2 == null) {
     return res.status(400).json({
@@ -80,11 +92,27 @@ router.post('/records', async (req, res) => {
       [coral_id, req.locationId]
     );
 
+    // Upload annotated image to Cloudinary if provided
+    let image_url = null;
+    if (cnn_feed_image) {
+      try {
+        const uploaded = await uploadGrowthImage(cnn_feed_image, 'image/jpeg');
+        image_url = uploaded.url;
+      } catch (uploadErr) {
+        console.error('Cloudinary upload failed (non-fatal):', uploadErr.message);
+      }
+    }
+
     const { rows } = await pool.query(
-      `INSERT INTO coral_records (coral_id, species, area_cm2, confidence, cnn_feed_image, location_id, nursery_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO coral_records
+         (coral_id, species, area_cm2, confidence, cnn_feed_image, location_id, nursery_id, latitude, longitude, remarks, image_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
-      [coral_id, species, area_cm2, confidence ?? 0, cnn_feed_image ?? '', req.locationId, nursery_id ?? null]
+      [
+        coral_id, species, area_cm2, confidence ?? 0, cnn_feed_image ?? '',
+        req.locationId, nursery_id ?? null,
+        latitude ?? null, longitude ?? null, remarks ?? null, image_url,
+      ]
     );
 
     const lastRecord  = prior[0] || null;
@@ -138,7 +166,8 @@ router.get('/records/:coralId', async (req, res) => {
   const { coralId } = req.params;
   try {
     const { rows } = await pool.query(
-      `SELECT id, coral_id, species, area_cm2, confidence, cnn_feed_image, recorded_at
+      `SELECT id, coral_id, species, area_cm2, confidence, cnn_feed_image, recorded_at,
+              latitude, longitude, remarks, image_url
        FROM coral_records
        WHERE coral_id = $1 AND location_id = $2
        ORDER BY recorded_at ASC`,
