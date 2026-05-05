@@ -98,8 +98,28 @@ async function runMigrations() {
         bleaching_percentage NUMERIC(5,2)  NOT NULL DEFAULT 0.00,
         original_image_url   TEXT,
         annotated_image_url  TEXT,
+        remarks              TEXT,
+        coral_id             TEXT,
+        image_latitude       DOUBLE PRECISION,
+        image_longitude      DOUBLE PRECISION,
         created_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW()
       )`, 'bleaching_history table');
+    await run(
+      `ALTER TABLE bleaching_history ADD COLUMN IF NOT EXISTS remarks TEXT`,
+      'bleaching_history.remarks'
+    );
+    await run(
+      `ALTER TABLE bleaching_history ADD COLUMN IF NOT EXISTS coral_id TEXT`,
+      'bleaching_history.coral_id'
+    );
+    await run(
+      `ALTER TABLE bleaching_history ADD COLUMN IF NOT EXISTS image_latitude DOUBLE PRECISION`,
+      'bleaching_history.image_latitude'
+    );
+    await run(
+      `ALTER TABLE bleaching_history ADD COLUMN IF NOT EXISTS image_longitude DOUBLE PRECISION`,
+      'bleaching_history.image_longitude'
+    );
     await run(
       `CREATE INDEX IF NOT EXISTS idx_bleaching_location ON bleaching_history(location)`,
       'idx_bleaching_location'

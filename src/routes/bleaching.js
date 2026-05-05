@@ -3,9 +3,10 @@ const express = require('express');
 const multer  = require('multer');
 
 const { predictReefHealth }    = require('../services/huggingface');
-const { saveAnalysis, getHistory } = require('../services/bleachingHistory');
+const { saveAnalysis, getHistory, getLocationDetails } = require('../services/bleachingHistory');
 const { validateAnalyzeInput } = require('../middleware/validateInput');
 const { uploadOriginalImage, uploadAnnotatedImage } = require('../services/cloudinary');
+const { extractImageLocation } = require('../services/imageMetadata');
 
 const router = express.Router();
 
@@ -35,13 +36,15 @@ router.post(
   validateAnalyzeInput,
   async (req, res, next) => {
     try {
-      const { location, date, nursery } = req.body;
+      const { location, date, nursery, remarks, coral_id } = req.body;
       const { buffer, mimetype, originalname } = req.file;
+      const { image_latitude, image_longitude } = extractImageLocation(buffer);
 
       // Upload original to Cloudinary + run HF inference in parallel
-      const [originalUpload, hfResult] = await Promise.all([
+      const [originalUpload, hfResult, locationDetails] = await Promise.all([
         uploadOriginalImage(buffer, mimetype, originalname),
         predictReefHealth(buffer, mimetype, originalname),
+        getLocationDetails(req.locationId),
       ]);
 
       const { annotatedImage, stats } = hfResult;
@@ -60,6 +63,10 @@ router.post(
         bleaching_percentage: stats.bleaching_percentage,
         original_image_url:   originalUpload.url,
         annotated_image_url:  annotatedUpload.url,
+        remarks,
+        coral_id,
+        image_latitude,
+        image_longitude,
       });
 
       return res.status(200).json({
@@ -68,6 +75,11 @@ router.post(
         bleaching_percentage: stats.bleaching_percentage,
         original_image_url:   originalUpload.url,
         annotated_image_url:  annotatedUpload.url,
+        remarks,
+        coral_id,
+        image_latitude,
+        image_longitude,
+        location_details:    locationDetails,
       });
     } catch (err) {
       next(err);
