@@ -37,7 +37,7 @@ const NURSERY_TYPE_INFO = {
   },
 };
 
-const VALID_TYPES = Object.keys(NURSERY_TYPE_INFO);
+const VALID_TYPES = new Set(Object.keys(NURSERY_TYPE_INFO));
 
 // Shared SQL fragment — converts PostGIS geometry to WGS84 lon/lat
 const POINT_SELECT = `
@@ -62,27 +62,26 @@ router.get('/nursery-types', (req, res) => {
 
 router.get('/candidate-points', async (req, res) => {
   try {
-    const availFilter = req.query.available === 'false' ? 'false' : 'true';
-    const limitClause = req.query.limit
-      ? ` LIMIT ${Math.max(1, Math.min(500, parseInt(req.query.limit) || 120))}`
-      : '';
+    const available = req.query.available !== 'false';
+    const limit = req.query.limit
+      ? Math.max(1, Math.min(500, parseInt(req.query.limit, 10) || 120))
+      : 120;
 
     const { rows } = await pool.query(
-      POINT_SELECT +
-      `WHERE is_available = ${availFilter} AND location_id = $1 ORDER BY suitability_score DESC${limitClause}`,
-      [req.locationId]
+      POINT_SELECT + `WHERE is_available = $2 AND location_id = $1 ORDER BY suitability_score DESC LIMIT $3`,
+      [req.locationId, available, limit]
     );
     res.json({ count: rows.length, points: rows });
   } catch (err) {
     console.error('GET /api/gis/candidate-points:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
 //  GET /top-locations?limit=10
 
 router.get('/top-locations', async (req, res) => {
-  const limit = Math.max(1, Math.min(300, parseInt(req.query.limit) || 10));
+  const limit = Math.max(1, Math.min(300, parseInt(req.query.limit, 10) || 10));
   try {
     const { rows } = await pool.query(
       POINT_SELECT + `WHERE is_available = true AND location_id = $1 ORDER BY suitability_score DESC LIMIT $2`,
@@ -91,7 +90,7 @@ router.get('/top-locations', async (req, res) => {
     res.json({ count: rows.length, limit, points: rows });
   } catch (err) {
     console.error('GET /api/gis/top-locations:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
@@ -100,11 +99,11 @@ router.get('/top-locations', async (req, res) => {
 
 router.post('/top-locations-by-nursery', async (req, res) => {
   const { nursery_type, width_m, length_m, radius_m, height_m } = req.body;
-  const limit = Math.max(1, Math.min(300, parseInt(req.body.limit) || 10));
+  const limit = Math.max(1, Math.min(300, parseInt(req.body.limit, 10) || 10));
 
-  if (!VALID_TYPES.includes(nursery_type)) {
+  if (!VALID_TYPES.has(nursery_type)) {
     return res.status(422).json({
-      error: `nursery_type must be one of: ${VALID_TYPES.join(', ')}`,
+      error: `nursery_type must be one of: ${[...VALID_TYPES].join(', ')}`,
     });
   }
 
@@ -141,7 +140,7 @@ router.post('/top-locations-by-nursery', async (req, res) => {
       return res.status(422).json({ error: err.response.data?.detail || err.message });
     }
     console.error('POST /api/gis/top-locations-by-nursery:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
@@ -176,14 +175,14 @@ router.get('/nurseries', async (req, res) => {
       date_placement: r.date_placement ?? null,
       depth_m:        r.depth_m        ?? null,
       notes:          r.notes          ?? null,
-      latitude:       r.latitude  != null ? parseFloat(r.latitude)  : null,
-      longitude:      r.longitude != null ? parseFloat(r.longitude) : null,
+      latitude:       r.latitude  !== null ? parseFloat(r.latitude)  : null,
+      longitude:      r.longitude !== null ? parseFloat(r.longitude) : null,
       created_at:     r.created_at,
     }));
     res.json({ count: nurseries.length, nurseries });
   } catch (err) {
     console.error('GET /api/gis/nurseries:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
@@ -197,12 +196,12 @@ router.post('/nurseries', async (req, res) => {
     name, coral_species, date_placement, depth_m, notes,
   } = req.body;
 
-  if (!type || longitude == null || latitude == null) {
+  if (!type || longitude === null || longitude === undefined || latitude === null || latitude === undefined) {
     return res.status(422).json({ error: 'Required fields: type, longitude, latitude' });
   }
-  if (!VALID_TYPES.includes(type)) {
+  if (!VALID_TYPES.has(type)) {
     return res.status(422).json({
-      error: `type must be one of: ${VALID_TYPES.join(', ')}`,
+      error: `type must be one of: ${[...VALID_TYPES].join(', ')}`,
     });
   }
 
@@ -219,7 +218,7 @@ router.post('/nurseries', async (req, res) => {
     if (err.response?.status === 422) {
       return res.status(422).json({ error: err.response.data?.detail || err.message });
     }
-    return res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: 'Internal server error.' });
   }
 
   const client = await pool.connect();
@@ -234,7 +233,7 @@ router.post('/nurseries', async (req, res) => {
       name          || null,
       coral_species || null,
       date_placement|| null,
-      depth_m       != null ? parseFloat(depth_m) : null,
+      depth_m       !== null && depth_m !== undefined ? parseFloat(depth_m) : null,
       notes         || null,
       req.locationId,
     ];
@@ -357,8 +356,8 @@ router.post('/nurseries', async (req, res) => {
         date_placement: newRow.date_placement ?? null,
         depth_m:        newRow.depth_m        ?? null,
         notes:          newRow.notes          ?? null,
-        latitude:       newRow.latitude  != null ? parseFloat(newRow.latitude)  : null,
-        longitude:      newRow.longitude != null ? parseFloat(newRow.longitude) : null,
+        latitude:       newRow.latitude  !== null ? parseFloat(newRow.latitude)  : null,
+        longitude:      newRow.longitude !== null ? parseFloat(newRow.longitude) : null,
         created_at:     newRow.created_at,
       },
       top5_updated_locations: top5,
@@ -366,7 +365,7 @@ router.post('/nurseries', async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('POST /api/gis/nurseries:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error.' });
   } finally {
     client.release();
   }
@@ -376,7 +375,7 @@ router.post('/nurseries', async (req, res) => {
 // Deletes a nursery and recalculates candidate-point availability for this location.
 
 router.delete('/nurseries/:id', async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id, 10);
   if (isNaN(id)) {
     return res.status(422).json({ error: 'Invalid nursery id.' });
   }
@@ -421,7 +420,7 @@ router.delete('/nurseries/:id', async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('DELETE /api/gis/nurseries/:id:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error.' });
   } finally {
     client.release();
   }
@@ -431,7 +430,7 @@ router.delete('/nurseries/:id', async (req, res) => {
 // Updates editable metadata/dimension fields for an existing nursery.
 
 router.patch('/nurseries/:id', async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(req.params.id, 10);
   if (isNaN(id)) {
     return res.status(422).json({ error: 'Invalid nursery id.' });
   }
@@ -467,7 +466,7 @@ router.patch('/nurseries/:id', async (req, res) => {
     res.json({ message: 'Nursery updated.', id: rows[0].id });
   } catch (err) {
     console.error('PATCH /api/gis/nurseries/:id:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
@@ -501,7 +500,7 @@ router.get('/restoration-zone', async (req, res) => {
     });
   } catch (err) {
     console.error('GET /api/gis/restoration-zone:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
@@ -524,23 +523,23 @@ router.get('/stats', async (req, res) => {
       WHERE location_id = $1
     `, [req.locationId]);
     res.json({
-      total:       parseInt(s.total),
-      available:   parseInt(s.available),
-      unavailable: parseInt(s.unavailable),
+      total:       parseInt(s.total, 10),
+      available:   parseInt(s.available, 10),
+      unavailable: parseInt(s.unavailable, 10),
       scores: {
         avg: parseFloat(s.avg_score || 0),
         max: parseFloat(s.max_score || 0),
         min: parseFloat(s.min_score || 0),
       },
       depth_bands: {
-        '0-3m':  parseInt(s.band_0_3m),
-        '3-7m':  parseInt(s.band_3_7m),
-        '7-10m': parseInt(s.band_7_10m),
+        '0-3m':  parseInt(s.band_0_3m, 10),
+        '3-7m':  parseInt(s.band_3_7m, 10),
+        '7-10m': parseInt(s.band_7_10m, 10),
       },
     });
   } catch (err) {
     console.error('GET /api/gis/stats:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 

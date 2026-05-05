@@ -40,7 +40,7 @@ function readIfd(buffer, tiffStart, ifdOffset, reader) {
   const entryCountOffset = tiffStart + ifdOffset;
   const entryCount = reader.uint16(entryCountOffset);
 
-  if (entryCount == null) return entries;
+  if (entryCount === null) return entries;
 
   for (let index = 0; index < entryCount; index += 1) {
     const entryOffset = entryCountOffset + 2 + index * 12;
@@ -51,7 +51,7 @@ function readIfd(buffer, tiffStart, ifdOffset, reader) {
     const count = reader.uint32(entryOffset + 4);
     const bytes = typeSize(type) * count;
 
-    if (tag == null || type == null || count == null || bytes <= 0) continue;
+    if (tag === null || type === null || count === null || bytes <= 0) continue;
 
     const valueOffset = bytes <= 4
       ? entryOffset + 8
@@ -69,7 +69,7 @@ function readRational(buffer, offset, reader) {
   const numerator = reader.uint32(offset);
   const denominator = reader.uint32(offset + 4);
 
-  if (numerator == null || denominator == null || denominator === 0) return null;
+  if (numerator === null || denominator === null || denominator === 0) return null;
   return numerator / denominator;
 }
 
@@ -80,7 +80,7 @@ function readGpsCoordinate(buffer, entry, reader) {
   const minutes = readRational(buffer, entry.offset + 8, reader);
   const seconds = readRational(buffer, entry.offset + 16, reader);
 
-  if (degrees == null || minutes == null || seconds == null) return null;
+  if (degrees === null || minutes === null || seconds === null) return null;
   return degrees + minutes / 60 + seconds / 3600;
 }
 
@@ -98,14 +98,14 @@ function parseExifGps(buffer, exifStart, exifLength) {
   if (reader.uint16(tiffStart + 2) !== 42) return null;
 
   const firstIfdOffset = reader.uint32(tiffStart + 4);
-  if (firstIfdOffset == null) return null;
+  if (firstIfdOffset === null) return null;
 
   const ifd0 = readIfd(buffer, tiffStart, firstIfdOffset, reader);
   const gpsPointer = ifd0.get(0x8825);
   if (!gpsPointer || gpsPointer.type !== 4 || gpsPointer.count < 1) return null;
 
   const gpsIfdOffset = reader.uint32(gpsPointer.offset);
-  if (gpsIfdOffset == null) return null;
+  if (gpsIfdOffset === null) return null;
 
   const gpsIfd = readIfd(buffer, tiffStart, gpsIfdOffset, reader);
   const latitude = readGpsCoordinate(buffer, gpsIfd.get(0x0002), reader);
@@ -113,7 +113,7 @@ function parseExifGps(buffer, exifStart, exifLength) {
   const latitudeRef = readAscii(buffer, gpsIfd.get(0x0001)?.offset ?? -1, 2);
   const longitudeRef = readAscii(buffer, gpsIfd.get(0x0003)?.offset ?? -1, 2);
 
-  if (latitude == null || longitude == null || !latitudeRef || !longitudeRef) return null;
+  if (latitude === null || longitude === null || !latitudeRef || !longitudeRef) return null;
 
   return {
     image_latitude: latitudeRef.startsWith('S') ? -latitude : latitude,

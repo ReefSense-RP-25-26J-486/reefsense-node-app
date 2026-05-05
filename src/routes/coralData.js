@@ -20,7 +20,7 @@ router.get('/records', async (req, res) => {
         res.json(rows);
     } catch (err) {
         console.error('GET /api/data/records:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -50,7 +50,7 @@ router.post('/records', async (req, res) => {
         res.json({ status: 'success', record_code, data: rows[0] });
     } catch (err) {
         console.error('POST /api/data/records:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -77,7 +77,7 @@ router.put('/records/:r_id', async (req, res) => {
         res.json({ status: 'updated', data: rows[0] });
     } catch (err) {
         console.error('PUT /api/data/records:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 
@@ -95,7 +95,7 @@ router.delete('/records/:r_id', async (req, res) => {
         res.json({ status: 'deleted' });
     } catch (err) {
         console.error('DELETE /api/data/records:', err.message);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Internal server error.' });
     }
 });
 

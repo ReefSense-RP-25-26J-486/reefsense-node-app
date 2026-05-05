@@ -16,7 +16,7 @@ module.exports = function optionalAuth(req, res, next) {
 
   // ── No token — public access ──────────────────────────────────────────────
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    const locId = parseInt(req.headers['x-location-id']);
+    const locId = parseInt(req.headers['x-location-id'], 10);
     req.locationId = isNaN(locId) ? 1 : locId;
     req.user = null;
     return next();
@@ -27,7 +27,7 @@ module.exports = function optionalAuth(req, res, next) {
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
 
-    const locId = parseInt(req.headers['x-location-id']);
+    const locId = parseInt(req.headers['x-location-id'], 10);
     if (isNaN(locId)) {
       // Authenticated but no location header — fall back to public
       req.locationId = 1;
@@ -47,7 +47,7 @@ module.exports = function optionalAuth(req, res, next) {
   } catch {
     // Invalid or expired token — fall back to public access rather than blocking.
     // (Hard 401 is reserved for fully-protected routes like /api/gis.)
-    const locId = parseInt(req.headers['x-location-id']);
+    const locId = parseInt(req.headers['x-location-id'], 10);
     req.locationId = isNaN(locId) ? 1 : locId;
     req.user = null;
     return next();

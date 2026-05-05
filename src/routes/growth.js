@@ -101,7 +101,7 @@ router.post('/analyze', upload.single('file'), async (req, res) => {
 router.post('/records', async (req, res) => {
   const { coral_id, species, area_cm2, confidence, cnn_feed_image, nursery_id, latitude, longitude, remarks } = req.body;
 
-  if (!coral_id || !species || area_cm2 == null) {
+  if (!coral_id || !species || area_cm2 === null || area_cm2 === undefined) {
     return res.status(400).json({
       error: 'coral_id, species, and area_cm2 are required',
     });
@@ -151,7 +151,7 @@ router.post('/records', async (req, res) => {
     });
   } catch (err) {
     console.error('POST /api/growth/records:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
@@ -179,7 +179,7 @@ router.get('/records', async (req, res) => {
     return res.json({ corals: rows });
   } catch (err) {
     console.error('GET /api/growth/records:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
@@ -207,7 +207,7 @@ router.get('/records/:coralId', async (req, res) => {
     return res.json({ coral_id: coralId, records: recordsWithGrowth });
   } catch (err) {
     console.error('GET /api/growth/records/:coralId:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
@@ -226,7 +226,7 @@ router.delete('/records/entry/:recordId', async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     console.error('DELETE /api/growth/records/entry/:recordId:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
@@ -241,7 +241,7 @@ router.delete('/records/:coralId', async (req, res) => {
     return res.json({ success: true, deleted: rowCount });
   } catch (err) {
     console.error('DELETE /api/growth/records/:coralId:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Internal server error.' });
   }
 });
 
