@@ -52,7 +52,7 @@ router.post('/register', async (req, res) => {
         return res.status(409).json({ error: 'An account with this email or NIC already exists.' });
       }
       // Unverified account — update details and refresh OTP
-      const password_hash = await bcrypt.hash(password, 12);
+      const password_hash = await bcrypt.hash(password, 10);
       await pool.query(
         `UPDATE users
          SET name = $1, password_hash = $2,
@@ -65,7 +65,7 @@ router.post('/register', async (req, res) => {
     }
 
     // Brand new account — create unverified and send OTP
-    const password_hash = await bcrypt.hash(password, 12);
+    const password_hash = await bcrypt.hash(password, 10);
     await pool.query(
       `INSERT INTO users (name, nic, email, password_hash, email_verified, verification_code, verification_expires)
        VALUES ($1, $2, $3, $4, false, $5, $6)`,
@@ -256,21 +256,33 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Fetch location IDs
+    // Fetch full location objects in one query — returned in the login response
+    // so the mobile app never needs to make a separate /profile call after login.
     const { rows: locRows } = await pool.query(
-      `SELECT location_id FROM user_locations WHERE user_id = $1`,
+      `SELECT l.id, l.name, l.slug, l.center_lat, l.center_lon
+       FROM user_locations ul
+       JOIN locations l ON l.id = ul.location_id
+       WHERE ul.user_id = $1
+       ORDER BY l.id`,
       [user.id]
     );
     if (locRows.length === 0) {
       return res.status(403).json({ error: 'No locations assigned. Please contact support.' });
     }
 
-    const locationIds = locRows.map(r => r.location_id);
+    const locationIds = locRows.map(r => r.id);
     const token = signToken(user, locationIds);
 
     return res.json({
       token,
-      user: { id: user.id, name: user.name, email: user.email, nic: user.nic, locationIds },
+      user: {
+        id:          user.id,
+        name:        user.name,
+        email:       user.email,
+        nic:         user.nic,
+        locationIds,
+        locations:   locRows,   // full objects — mobile app skips /profile call
+      },
     });
   } catch (err) {
     console.error('POST /api/auth/login:', err.message);
@@ -328,7 +340,7 @@ router.patch('/profile', jwtOnly, async (req, res) => {
     const match = await bcrypt.compare(currentPassword, rows[0].password_hash);
     if (!match) return res.status(401).json({ error: 'Current password is incorrect.' });
 
-    const newHash = await bcrypt.hash(newPassword, 12);
+    const newHash = await bcrypt.hash(newPassword, 10);
     add('password_hash', newHash);
   }
 

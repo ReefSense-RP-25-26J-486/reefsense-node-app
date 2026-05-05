@@ -3,7 +3,7 @@ name: CI/CD — Security Scan + Deploy to Azure
 on:
   push:
     branches:
-      - dev
+      - main
   workflow_dispatch:
 
 jobs:
@@ -76,7 +76,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: build             # only runs if build passes
     permissions:
-      id-token: write
       contents: read
 
     steps:
@@ -85,16 +84,10 @@ jobs:
         with:
           name: node-app
 
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_783201C98B7646FF815BD7A90D34B6E4 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_4FC9010B9B924A3B83D987DE1DD4EB30 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_DE7AE31621824BB7AB3AED56E25B6A2B }}
-
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'reefsense-api'
           slot-name: 'Production'
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
           package: .
