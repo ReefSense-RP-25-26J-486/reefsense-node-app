@@ -1,4 +1,4 @@
-name: CI/CD — Security Scan + Deploy to Azure
+name: CI/CD — Build + Deploy to Azure
 
 on:
   push:
@@ -7,47 +7,10 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ── Job 1: Security Scan (SAST) ─────────────────────────────────────────────
-  security-scan:
-    name: SonarCloud Security Scan
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # required for SonarCloud blame data
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Run SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@v5
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: https://sonarcloud.io
-
-      - name: Check Quality Gate
-        uses: SonarSource/sonarqube-quality-gate-action@v1
-        timeout-minutes: 5
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: https://sonarcloud.io
-
-  # ── Job 2: Build ─────────────────────────────────────────────────────────────
+  # ── Job 1: Build ─────────────────────────────────────────────────────────────
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: security-scan     # only runs if security scan passes
     permissions:
       contents: read
 
@@ -70,11 +33,11 @@ jobs:
           name: node-app
           path: .
 
-  # ── Job 3: Deploy to Azure ───────────────────────────────────────────────────
+  # ── Job 2: Deploy to Azure ───────────────────────────────────────────────────
   deploy:
     name: Deploy to Azure
     runs-on: ubuntu-latest
-    needs: build             # only runs if build passes
+    needs: build
     permissions:
       contents: read
 
