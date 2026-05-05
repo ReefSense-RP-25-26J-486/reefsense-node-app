@@ -30,7 +30,7 @@ async function getHistory({ location, nursery, date, location_id } = {}) {
   const values     = [];
 
   // Always filter by research site location
-  if (location_id != null) {
+  if (location_id !== null && location_id !== undefined) {
     values.push(location_id);
     conditions.push(`bh.location_id = $${values.length}`);
   }
@@ -61,7 +61,7 @@ async function getHistory({ location, nursery, date, location_id } = {}) {
 }
 
 async function getLocationDetails(location_id) {
-  if (location_id == null) return null;
+  if (location_id === null || location_id === undefined) return null;
 
   const { rows } = await pool.query(
     `SELECT id, name, slug, center_lat, center_lon, description

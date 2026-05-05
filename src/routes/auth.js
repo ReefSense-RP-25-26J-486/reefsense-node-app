@@ -210,12 +210,12 @@ router.post('/complete-registration', async (req, res) => {
 
     // Upsert user_locations (replace existing selections)
     await pool.query(`DELETE FROM user_locations WHERE user_id = $1`, [user.id]);
-    for (const locId of validIds) {
-      await pool.query(
+    await Promise.all(validIds.map(locId =>
+      pool.query(
         `INSERT INTO user_locations (user_id, location_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
         [user.id, locId]
-      );
-    }
+      )
+    ));
 
     const token = signToken(user, validIds);
     return res.json({

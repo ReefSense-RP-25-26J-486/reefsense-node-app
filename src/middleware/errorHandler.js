@@ -6,7 +6,8 @@ function errorHandler(err, req, res, _next) {
   if (isDev) console.error(err.stack);
 
   if (err.name === 'MulterError') {
-    return res.status(400).json({ error: err.message });
+    // Multer messages are safe user-facing strings (e.g. "File too large")
+    return res.status(400).json({ error: err.message }); // NOSONAR
   }
   if (err.isAxiosError) {
     const status = err.response?.status;
@@ -28,10 +29,12 @@ function errorHandler(err, req, res, _next) {
     });
   }
   if (err.message?.includes('queue is full')) {
-    return res.status(503).json({ error: err.message });
+    return res.status(503).json({ error: err.message }); // NOSONAR — controlled HF queue message
   }
   if (err.message) {
-    return res.status(err.statusCode || 500).json({ error: err.message });
+    return res.status(err.statusCode || 500).json({
+      error: isDev ? err.message : 'An unexpected error occurred.',
+    });
   }
   return res.status(500).json({ error: 'An unexpected error occurred.' });
 }

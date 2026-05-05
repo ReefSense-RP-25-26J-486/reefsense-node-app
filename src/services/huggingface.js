@@ -51,14 +51,17 @@ async function uploadImage(hfUrl, imageBuffer, mimeType, filename) {
   return first;
 }
 
-function waitForResult(sseUrl) {
-  return new Promise(async (resolve, reject) => {
-    let response;
-    try {
-      response = await axios.get(sseUrl, { responseType: 'stream', headers: { Accept: 'text/event-stream' }, timeout: 120000 });
-    } catch (err) {
-      return reject(new Error(`Could not open SSE stream: ${err.message}`));
-    }
+async function waitForResult(sseUrl) {
+  // Open the SSE stream before entering the Promise constructor to avoid
+  // the async-executor anti-pattern (unhandled rejections after an await).
+  let response;
+  try {
+    response = await axios.get(sseUrl, { responseType: 'stream', headers: { Accept: 'text/event-stream' }, timeout: 120000 });
+  } catch (err) {
+    throw new Error(`Could not open SSE stream: ${err.message}`);
+  }
+
+  return new Promise((resolve, reject) => {
     let buffer = '', settled = false;
     const done = (err, value) => {
       if (settled) return;
