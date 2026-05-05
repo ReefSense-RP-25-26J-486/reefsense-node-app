@@ -74,7 +74,10 @@ router.post('/analyze', upload.single('file'), async (req, res) => {
     // but can be 10–30 MB of base64 for large iPhone photos, causing the mobile
     // fetch to fail while buffering the full JSON payload.
     const { enhanced_image, ...payload } = response.data;
-    const detectionCount = Array.isArray(payload.detections) ? payload.detections.length : '?';
+    // Sanitize before logging — coerce to a safe integer to prevent log injection (S5145)
+    const detectionCount = Number.isFinite(payload.detections?.length)
+      ? Math.trunc(payload.detections.length)
+      : 0;
     console.log(`[Growth/analyze] HF OK — ${detectionCount} detection(s)`);
 
     // Return GPS alongside the HF payload so the app can store it with the record
