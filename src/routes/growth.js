@@ -41,23 +41,34 @@ router.post('/analyze', upload.single('file'), async (req, res) => {
       contentType: req.file.mimetype,
     });
 
+    console.log(`[Growth/analyze] forwarding ${req.file.size} byte image to HF space`);
     const response = await axios.post(`${hfUrl}/predict`, formData, {
       headers: { ...formData.getHeaders(), 'x-api-key': apiKey },
       timeout: 120_000,
+      maxContentLength: Infinity,
+      maxBodyLength:    Infinity,
     });
 
-    return res.status(200).json(response.data);
+    // Strip enhanced_image from the response — it is never rendered in the app
+    // but can be 10–30 MB of base64 for large iPhone photos, causing the mobile
+    // fetch to fail while buffering the full JSON payload.
+    const { enhanced_image, ...payload } = response.data;
+    const detectionCount = Array.isArray(payload.detections) ? payload.detections.length : '?';
+    console.log(`[Growth/analyze] HF OK — ${detectionCount} detection(s)`);
+    return res.status(200).json(payload);
   } catch (err) {
     if (err.response) {
+      console.error(`[Growth/analyze] HF error ${err.response.status}:`, JSON.stringify(err.response.data).slice(0, 300));
       return res.status(err.response.status).json({
         error:   'HuggingFace inference failed',
         details: err.response.data,
       });
     }
     if (err.code === 'ECONNABORTED') {
+      console.error('[Growth/analyze] HF timeout after 120s');
       return res.status(504).json({ error: 'HuggingFace request timed out' });
     }
-    console.error('Growth HF error:', err.message);
+    console.error('[Growth/analyze] unexpected error:', err.message);
     return res.status(500).json({ error: 'Failed to reach AI service' });
   }
 });
