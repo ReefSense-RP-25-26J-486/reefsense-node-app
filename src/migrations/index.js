@@ -133,6 +133,12 @@ async function runMigrations() {
       'idx_bleaching_history_created_at'
     );
 
+    // Make nursery optional (nullable) — was previously NOT NULL
+    await run(
+      `ALTER TABLE bleaching_history ALTER COLUMN nursery DROP NOT NULL`,
+      'bleaching_history.nursery nullable'
+    );
+
     //  Coral growth records 
     await run(`
       CREATE TABLE IF NOT EXISTS coral_records (

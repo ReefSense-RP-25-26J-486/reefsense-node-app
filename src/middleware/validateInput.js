@@ -10,12 +10,11 @@ function validateAnalyzeInput(req, res, next) {
   if (!date || String(date).trim() === '') {
     return res.status(400).json({ error: 'date is required in the request body.' });
   }
-  if (!nursery || String(nursery).trim() === '') {
-    return res.status(400).json({ error: 'nursery is required in the request body.' });
-  }
   req.body.location = String(location).trim();
   req.body.date     = String(date).trim();
-  req.body.nursery  = String(nursery).trim();
+  req.body.nursery  = nursery == null || String(nursery).trim() === ''
+    ? null
+    : String(nursery).trim();
   req.body.remarks  = remarks == null || String(remarks).trim() === ''
     ? null
     : String(remarks).trim();

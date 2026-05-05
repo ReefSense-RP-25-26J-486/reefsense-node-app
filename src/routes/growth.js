@@ -21,6 +21,20 @@ const upload = multer({
 });
 
 
+// POST /extract-gps — receive the ORIGINAL (un-resized) image and return its
+// GPS coordinates extracted from raw JPEG EXIF bytes.
+// This endpoint is called by the mobile app BEFORE the image is resized for
+// HF inference, because the resize step (expo-image-manipulator) strips EXIF.
+router.post('/extract-gps', upload.single('file'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No image file provided.' });
+  }
+  const { image_latitude, image_longitude } = extractImageLocation(req.file.buffer);
+  console.log(`[Growth/extract-gps] GPS: lat=${image_latitude}, lon=${image_longitude}`);
+  return res.status(200).json({ latitude: image_latitude, longitude: image_longitude });
+});
+
+
 router.post('/analyze', upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({
