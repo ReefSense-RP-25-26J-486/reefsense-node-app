@@ -98,8 +98,28 @@ async function runMigrations() {
         bleaching_percentage NUMERIC(5,2)  NOT NULL DEFAULT 0.00,
         original_image_url   TEXT,
         annotated_image_url  TEXT,
+        remarks              TEXT,
+        coral_id             TEXT,
+        image_latitude       DOUBLE PRECISION,
+        image_longitude      DOUBLE PRECISION,
         created_at           TIMESTAMPTZ   NOT NULL DEFAULT NOW()
       )`, 'bleaching_history table');
+    await run(
+      `ALTER TABLE bleaching_history ADD COLUMN IF NOT EXISTS remarks TEXT`,
+      'bleaching_history.remarks'
+    );
+    await run(
+      `ALTER TABLE bleaching_history ADD COLUMN IF NOT EXISTS coral_id TEXT`,
+      'bleaching_history.coral_id'
+    );
+    await run(
+      `ALTER TABLE bleaching_history ADD COLUMN IF NOT EXISTS image_latitude DOUBLE PRECISION`,
+      'bleaching_history.image_latitude'
+    );
+    await run(
+      `ALTER TABLE bleaching_history ADD COLUMN IF NOT EXISTS image_longitude DOUBLE PRECISION`,
+      'bleaching_history.image_longitude'
+    );
     await run(
       `CREATE INDEX IF NOT EXISTS idx_bleaching_location ON bleaching_history(location)`,
       'idx_bleaching_location'
@@ -234,6 +254,28 @@ async function runMigrations() {
     await run(
       `ALTER TABLE coral_records ADD COLUMN IF NOT EXISTS nursery_id INTEGER REFERENCES nurseries(id)`,
       'coral_records.nursery_id'
+    );
+
+    // Growth: GPS coordinates from image capture
+    await run(
+      `ALTER TABLE coral_records ADD COLUMN IF NOT EXISTS latitude FLOAT`,
+      'coral_records.latitude'
+    );
+    await run(
+      `ALTER TABLE coral_records ADD COLUMN IF NOT EXISTS longitude FLOAT`,
+      'coral_records.longitude'
+    );
+
+    // Growth: free-text observation remarks
+    await run(
+      `ALTER TABLE coral_records ADD COLUMN IF NOT EXISTS remarks TEXT`,
+      'coral_records.remarks'
+    );
+
+    // Growth: Cloudinary URL for annotated image
+    await run(
+      `ALTER TABLE coral_records ADD COLUMN IF NOT EXISTS image_url TEXT`,
+      'coral_records.image_url'
     );
 
     console.log('[Migrations] Complete ✓');

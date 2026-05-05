@@ -1,6 +1,6 @@
 
 function validateAnalyzeInput(req, res, next) {
-  const { location, date, nursery } = req.body;
+  const { location, date, nursery, remarks, coral_id } = req.body;
   if (!req.file) {
     return res.status(400).json({ error: 'Image file is required (field: image).' });
   }
@@ -16,6 +16,12 @@ function validateAnalyzeInput(req, res, next) {
   req.body.location = String(location).trim();
   req.body.date     = String(date).trim();
   req.body.nursery  = String(nursery).trim();
+  req.body.remarks  = remarks == null || String(remarks).trim() === ''
+    ? null
+    : String(remarks).trim();
+  req.body.coral_id = coral_id == null || String(coral_id).trim() === ''
+    ? null
+    : String(coral_id).trim();
   next();
 }
 
