@@ -1,0 +1,36 @@
+name: Deploy to Azure App Service
+
+on:
+  push:
+    branches:
+      - gis-nursery-placement   # triggers on every push to this branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Check out the code
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Set up Node.js 20
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # 3. Install production dependencies only
+      - name: Install dependencies
+        run: npm install --production
+
+      # 4. Deploy to Azure App Service
+      #    Requires secret: AZURE_WEBAPP_PUBLISH_PROFILE
+      #    Get it from: Azure Portal → your App Service → Overview → Download publish profile
+      - name: Deploy to Azure
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: 'reefsense-api'          # must match your Azure App Service name
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: .
